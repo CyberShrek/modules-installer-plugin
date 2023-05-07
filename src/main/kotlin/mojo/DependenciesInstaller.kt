@@ -13,6 +13,8 @@ import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder
 import org.apache.maven.shared.dependency.graph.DependencyNode
 import org.intellij.lang.annotations.Language
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.jar.JarFile
 
 
@@ -69,18 +71,33 @@ class DependenciesInstaller : AbstractMojo() {
             repositorySystem.resolve(ArtifactResolutionRequest().apply { artifact = node.artifact })
         }
 
-        val name = with(node.artifact){
-            JarFile(file).manifest?.mainAttributes?.getValue("Automatic-Module-Name")
-                ?: "$groupId.$artifactId"
+        fun install(){
+            log.info(indent + name)
+            copyFileToHome()
+            createOrReplaceModuleXml()
+            for (dependency in dependencies)
+                dependency.install()
         }
-        val home = "$wildflyHome/modules/${name.replace('.', '/')}/$group/$slot/"
-        val dependencies = node.children.map { child -> Module(child, depth+1) }
 
-        @Language("xml")
-        private val xml = """
+        private val file = node.artifact.file
+        private val name = JarFile(file)
+            .manifest
+            ?.mainAttributes
+            ?.getValue("Automatic-Module-Name")
+            ?: "${node.artifact.groupId}.${node.artifact.artifactId}"
+
+        private val home = "$wildflyHome/modules/$group/${name.replace('.', '/')}/$slot/"
+        private val dependencies = node.children.map { child -> Module(child, depth+1) }
+
+        private val indent = "|   ".repeat(depth)
+
+        private val xml: String
+            @Language("xml")
+            get() = """
              <module xmlns="urn:jboss:module:1.1" name="$name">
                  <resources>
-                     <resource-root path="${node.artifact.file.name}"/>
+                     ${homeJarFileNames.joinToString("""
+                     """) { fileName -> "<resource-root path=$fileName/>" }}
                  </resources>
                  <dependencies>
                      ${dependencies.joinToString("""
@@ -89,23 +106,23 @@ class DependenciesInstaller : AbstractMojo() {
              </module>
         """.trimIndent()
 
-        fun install(logDepth: Int = 0){
-            log.info(
-                if(logDepth == 0) "${name} modules installation:"
-                else xml//"|   ".repeat(logDepth) + name
+        private val homeJarFileNames: List<String>
+            get() = File(home).listFiles { file -> file.isFile && file.name.endsWith(".jar") }
+                ?.map { it.name }
+                ?: emptyList()
 
-            )
-            for (dependency in dependencies)
-                dependency.install(logDepth + 1)
+        private fun copyFileToHome() = Files.copy(
+            file.toPath(),
+            File(
+                File(home).apply { if(!exists()) mkdirs() },
+                file.name
+            ).toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+        )
+
+        private fun createOrReplaceModuleXml() = with(File(home, "module.xml")){
+            createNewFile()
+            writeText(xml)
         }
-
-        fun copyFileToPath(path: String) {
-            val newFile = File(path)
-            if (!newFile.exists()) {
-                newFile.createNewFile()
-            }
-//            Files.copy(no.toPath(), newFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
-
     }
 }
