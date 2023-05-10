@@ -1,25 +1,23 @@
-import java.io.BufferedReader
+import model.ModuleXml
+import model.ResourceXml
 import java.io.File
-import java.io.IOException
-import java.io.InputStreamReader
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import javax.xml.parsers.DocumentBuilderFactory
-import javax.xml.stream.XMLOutputFactory
-import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMSource
-import javax.xml.transform.stream.StreamResult
+import java.lang.Boolean
+import javax.xml.bind.JAXBContext
+import javax.xml.bind.Marshaller
 import kotlin.test.Test
 
 
 class Test {
 
     @Test
-    fun `copy file to directory`() {
+    fun test() {
+        val module = ModuleXml(name = "test", resources = setOf(ResourceXml("xcvcxvvvcx"), ResourceXml("12322323")))
+//        module.resources = setOf(ResourceXml("xcvcxvvvcx"), ResourceXml("12322323"))
 
-    }
 
-
-    fun copyFileToDirectory(sourceFile: File, destinationDirectory: File) {
+        val context = JAXBContext.newInstance(ModuleXml::class.java)
+        val mar: Marshaller = context.createMarshaller()
+        mar.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE)
+        mar.marshal(module, File("./module.xml"))
     }
 }
