@@ -14,9 +14,12 @@ import org.apache.maven.repository.RepositorySystem
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder
 import org.apache.maven.shared.dependency.graph.DependencyNode
 import java.io.File
+import java.lang.Boolean
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.jar.JarFile
+import javax.xml.bind.JAXBContext
+import javax.xml.bind.Marshaller
 
 
 @Mojo(name = "install-to-wildfly", defaultPhase = LifecyclePhase.INSTALL)
@@ -54,8 +57,7 @@ class DependenciesInstaller : AbstractMojo() {
     override fun execute() {
         try {
             checkIfWildFlyExists()
-            if(writeMode == WriteMode.REPLACE)
-                clearDirectory(groupHome)
+            if(writeMode == WriteMode.REPLACE) clearDirectory(File(groupHome))
             installModules()
         }
         catch (err: Error){
@@ -78,64 +80,89 @@ class DependenciesInstaller : AbstractMojo() {
             .buildDependencyGraph(
                 DefaultProjectBuildingRequest(session.projectBuildingRequest)
                     .apply { project = session.currentProject }, null)
-    ).install()
+    )
 
-    private fun clearDirectory(directoryPath: String) = clearDirectory(File(directoryPath))
     private fun clearDirectory(directory: File) {
         directory.listFiles()?.forEach {
             if (it.isDirectory) clearDirectory(it) else it.delete()
         }
     }
 
-    inner class Module(node: DependencyNode){
+    private inline fun <reified T>serializeXml(file: File, xmlObj: T) =
+        with(JAXBContext.newInstance(T::class.java).createMarshaller()){
+            setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE)
+            marshal(xmlObj, file)
+        }
+
+    private inline fun <reified T>deserializeXml(file: File): T =
+        JAXBContext.newInstance(T::class.java)
+            .createUnmarshaller()
+            .unmarshal(file) as T
+
+
+    inner class Module(node: DependencyNode, depth: Int = 0){
+        private val logIndent = "|   ".repeat(depth)
+        private fun log(message: String) = log.info(logIndent + message)
+
         init {
+            log(node.artifact.toString())
             // Fetching the node artifact via Maven repository system
             repositorySystem.resolve(ArtifactResolutionRequest().apply { artifact = node.artifact })
         }
 
-        private val name = JarFile(node.artifact.file)
+        private val name = (JarFile(node.artifact.file)
             .manifest
             ?.mainAttributes
             ?.getValue("Automatic-Module-Name")
-            ?: "${node.artifact.groupId}.${node.artifact.artifactId}"
-
-        private val home = "$groupHome${name.replace('.', '/')}/$slot/".also {
-            // Resolving the home
-            with(File(it)) {
-                if (!exists()) mkdirs()
-                else if(writeMode == WriteMode.UPDATE)
-                    clearDirectory(this) else {}
+            ?: "${node.artifact.groupId}.${node.artifact.artifactId}").also {
+                log("module name: $it")
             }
-            // Copying artifact file from local Maven repository to actual module home
-            Files.copy(
-                node.artifact.file.toPath(),
-                File(it + node.artifact.file.name).toPath(),
-                StandardCopyOption.REPLACE_EXISTING
+
+        private val home = "$groupHome${name.replace('.', '/')}/$slot/"
+            .also {
+                log("module home: ${it.replace('\\', '/')}")
+                // Resolving the home
+                with(File(it)) {
+                    if (!exists()) mkdirs()
+                    else if(writeMode == WriteMode.UPDATE)
+                        clearDirectory(this)else {}
+                }
+                // Copying artifact file from local Maven repository to module home
+                Files.copy(
+                    node.artifact.file.toPath(),
+                    File(it + node.artifact.file.name).toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+
+        private val dependencies = node.children
+            .also {
+                if(it.isNotEmpty())
+                    log("dependencies:")
+            }.map {
+                child -> Module(child, depth + 1)
+            }.toSet()
+
+        init{
+            // Creating module.xml
+            val moduleXmlFile = File(home + "module.xml")
+            val oldModuleXml =
+                if (moduleXmlFile.exists() && writeMode == WriteMode.MERGE)
+                    deserializeXml<ModuleXml>(moduleXmlFile)
+                else null
+
+            serializeXml(moduleXmlFile,
+                ModuleXml(
+                    name = name,
+                    resources = File(home).listFiles { file -> file.isFile && file.name.endsWith(".jar") }
+                        ?.map { ResourceXml(path = it.name) }?.toSet()
+                        ?.plus(oldModuleXml?.resources ?: emptySet())
+                        ?: emptySet(),
+                    dependencies = dependencies.map { ModuleXml(name = it.name) }.toSet()
+                        .plus(oldModuleXml?.dependencies ?: emptySet())
+                )
             )
-        }
-
-        private val dependencies = node.children.map { child -> Module(child) }.toSet()
-
-        fun install(logDepth: Int = 0){
-            log.info("|   ".repeat(logDepth) + name)
-            if(writeMode == WriteMode.UPDATE)
-                clearDirectory(home)
-
-            addOrMergeModuleXml()
-            for (dependency in dependencies)
-                dependency.install(logDepth + 1)
-        }
-
-        private fun createModuleXml() = ModuleXml(
-            name = name,
-            resources = File(home).listFiles { file -> file.isFile && file.name.endsWith(".jar") }
-                ?.map { ResourceXml(path = it.name) }?.toSet()
-                ?: emptySet(),
-            dependencies = dependencies.map { ModuleXml(xmlns = null, name = it.name) }.toSet()
-        )
-
-        private fun addOrMergeModuleXml(xml: ModuleXml = createModuleXml()) {
-            xml.dependencies
+            log("------------------------------------------------------------------------")
         }
     }
 }

@@ -1,13 +1,9 @@
 package model
 
-import javax.xml.bind.annotation.XmlAttribute
-import javax.xml.bind.annotation.XmlElement
-import javax.xml.bind.annotation.XmlElementWrapper
-import javax.xml.bind.annotation.XmlRootElement
+import javax.xml.bind.annotation.*
 
 @XmlRootElement(name = "module")
 data class ModuleXml(
-    @XmlAttribute val xmlns: String? = "urn:jboss:module:1.1",
     @XmlAttribute val name: String? = null,
 
     @XmlElementWrapper(name = "resource-root")

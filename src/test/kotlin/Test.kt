@@ -14,10 +14,9 @@ class Test {
         val module = ModuleXml(name = "test", resources = setOf(ResourceXml("xcvcxvvvcx"), ResourceXml("12322323")))
 //        module.resources = setOf(ResourceXml("xcvcxvvvcx"), ResourceXml("12322323"))
 
-
-        val context = JAXBContext.newInstance(ModuleXml::class.java)
-        val mar: Marshaller = context.createMarshaller()
-        mar.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE)
-        mar.marshal(module, File("./module.xml"))
+        with(JAXBContext.newInstance(ModuleXml::class.java).createMarshaller()){
+            setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE)
+            marshal(module, File("./module.xml"))
+        }
     }
 }
