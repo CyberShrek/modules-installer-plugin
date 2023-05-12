@@ -1,7 +1,7 @@
 package mojo
 
-import model.ModuleXml
-import model.ResourceXml
+import model.module.ModuleXml
+import model.module.ResourceXml
 import org.apache.maven.artifact.resolver.ArtifactResolutionRequest
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.plugin.AbstractMojo
@@ -57,7 +57,8 @@ class DependenciesInstaller : AbstractMojo() {
     override fun execute() {
         try {
             checkIfWildFlyExists()
-            if(writeMode == WriteMode.REPLACE) clearDirectory(File(groupHome))
+            if(writeMode == WriteMode.REPLACE)
+                clearDirectory(File(groupHome))
             installModules()
         }
         catch (err: Error){
@@ -82,9 +83,10 @@ class DependenciesInstaller : AbstractMojo() {
                     .apply { project = session.currentProject }, null)
     )
 
-    private fun clearDirectory(directory: File) {
+    fun clearDirectory(directory: File) {
         directory.listFiles()?.forEach {
-            if (it.isDirectory) clearDirectory(it) else it.delete()
+            if (it.isDirectory) clearDirectory(it)
+            it.delete()
         }
     }
 

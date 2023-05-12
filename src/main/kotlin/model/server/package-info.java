@@ -1,8 +1,8 @@
 @XmlSchema(
-        namespace = "urn:jboss:module:1.1",
+        namespace = "urn:jboss:domain:13.0",
         elementFormDefault = XmlNsForm.QUALIFIED
 )
-package model;
+package model.server;
 
 import javax.xml.bind.annotation.XmlNsForm;
 import javax.xml.bind.annotation.XmlSchema;
