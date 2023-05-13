@@ -1,11 +1,11 @@
-
 import org.w3c.dom.Document
 import org.w3c.dom.Node
-import org.w3c.dom.NodeList
 import java.io.File
+import java.util.stream.IntStream
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
+import javax.xml.transform.dom.DOMResult
 import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 import kotlin.test.Test
@@ -13,26 +13,50 @@ import kotlin.test.Test
 
 class Test {
 
+    private val file = File("standalone.xml")
+    private val document = file.parseXml()
+
     @Test
     fun test() {
-        val file = File("standalone.xml")
-        val doc = parseXmlFile(file)
+        val rootElement = document.getElementsByTagName("root").item(0)
 
-        val subsystemNode = doc
-            .getChild("server", "urn:jboss:domain")
-            ?.getChild("profile")
-            ?.getChild("subsystem", "urn:jboss:domain:ee")
+        rootElement.removeEmptyTextNodes()
 
-        val modulesNode: Node
+        val person1 = document.createElement("person")
+        person1.setAttribute("name", "John")
+        rootElement.appendChild(person1)
 
-        if(subsystemNode?.getChild("global-modules") == null)
+        val person2 = document.createElement("person")
+        person2.setAttribute("name", "Jane")
+        rootElement.appendChild(person2)
 
 
-        println(
-            doc.getChild("server", "urn:jboss:domain")
-                ?.getChild("profile")
-                ?.getChild("subsystem", "urn:jboss:domain:ee")
-                ?.baseURI)
+//        val subsystemNode = document
+//            .getChild("server", "urn:jboss:domain")
+//            ?.getChild("profile")
+//            ?.getChild("subsystem", "urn:jboss:domain:ee")
+
+//        subsystemNode?.getOrCreateChild("test0", "test")
+//
+//        subsystemNode?.getOrCreateChild("test1", "test")
+//        subsystemNode?.getOrCreateChild("test2", "test")
+//        subsystemNode?.getOrCreateChild("test3", "test")
+//        subsystemNode?.getOrCreateChild("test4", "test")
+//        val modulesNode: Node
+
+        file.saveXml(document)
+
+    }
+
+    private fun Node.getOrCreateChild(name: String, xmlns: String? = null): Node {
+        var child = getChild(name, xmlns)
+        return if (child != null) child
+        else {
+            child = ownerDocument.createElement(name)
+            if(xmlns != null) child.setAttribute("xmlns","$xmlns:1.0")
+            appendChild(child)
+            child
+        }
     }
 
     private fun Node.getChild(name: String, xmlns: String? = null): Node? {
@@ -40,7 +64,8 @@ class Test {
         for (i in 0 until childNodes.length) {
             with(childNodes.item(i)){
                 if (nodeName == name
-                    && if(xmlns != null) attributes.getNamedItem("xmlns").nodeValue.substringBeforeLast(":") == xmlns
+                    && if(xmlns != null)
+                        attributes.getNamedItem("xmlns").nodeValue.substringBeforeLast(":") == xmlns
                     else true)
                     return this
             }
@@ -48,36 +73,23 @@ class Test {
         return null
     }
 
-    fun updateTestValueInStandaloneXML() {
-
-
-//        val testNode = findElementByTagName(
-//            doc.getElementsByTagName( "server"),
-//            "test",
-//            "urn:jboss:domain:ee:5.0"
-//        )
-//        if (testNode != null) {
-//            val oldValue = testNode.textContent
-//            val newValue = "$oldValue hello"
-//            testNode.textContent = newValue
-//            saveXmlFile(doc, file)
-//        }
+    private fun Node.removeEmptyTextNodes() {
+        for (i in childNodes.length - 1 downTo 0) {
+            val node = childNodes.item(i)
+            if (node.nodeType == Node.TEXT_NODE && node.nodeValue.trim().isEmpty())
+                removeChild(node)
+        }
     }
 
+    private fun File.parseXml(): Document =
+        DocumentBuilderFactory
+            .newInstance()
+            .newDocumentBuilder()
+            .parse(this)
 
-    fun parseXmlFile(file: File): Document {
-        val factory = DocumentBuilderFactory.newInstance()
-        val builder = factory.newDocumentBuilder()
-        return builder.parse(file)
-    }
-
-    fun saveXmlFile(doc: Document, file: File) {
-        val transformerFactory = TransformerFactory.newInstance()
-        val transformer = transformerFactory.newTransformer()
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes")
-        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4")
-        val source = DOMSource(doc)
-        val result = StreamResult(file)
-        transformer.transform(source, result)
+    private fun File.saveXml(doc: Document) = with(TransformerFactory.newInstance().newTransformer()) {
+        setOutputProperty(OutputKeys.INDENT, "yes")
+        setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4")
+        transform(DOMSource(doc), StreamResult(this@saveXml))
     }
 }
