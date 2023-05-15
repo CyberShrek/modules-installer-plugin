@@ -1,7 +1,5 @@
 package mojo
 
-import model.module.ModuleXml
-import model.module.ResourceXml
 import org.apache.maven.artifact.resolver.ArtifactResolutionRequest
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.plugin.AbstractMojo
@@ -13,13 +11,17 @@ import org.apache.maven.project.DefaultProjectBuildingRequest
 import org.apache.maven.repository.RepositorySystem
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder
 import org.apache.maven.shared.dependency.graph.DependencyNode
+import org.w3c.dom.Document
+import org.w3c.dom.Node
 import java.io.File
-import java.lang.Boolean
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.jar.JarFile
-import javax.xml.bind.JAXBContext
-import javax.xml.bind.Marshaller
+import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.transform.OutputKeys
+import javax.xml.transform.TransformerFactory
+import javax.xml.transform.dom.DOMSource
+import javax.xml.transform.stream.StreamResult
 
 
 @Mojo(name = "install-to-wildfly", defaultPhase = LifecyclePhase.INSTALL)
@@ -58,7 +60,7 @@ class DependenciesInstaller : AbstractMojo() {
         try {
             checkIfWildFlyExists()
             if(writeMode == WriteMode.REPLACE)
-                clearDirectory(File(groupHome))
+                File(groupHome).clearDirectory()
             installModules()
         }
         catch (err: Error){
@@ -82,25 +84,6 @@ class DependenciesInstaller : AbstractMojo() {
                 DefaultProjectBuildingRequest(session.projectBuildingRequest)
                     .apply { project = session.currentProject }, null)
     )
-
-    fun clearDirectory(directory: File) {
-        directory.listFiles()?.forEach {
-            if (it.isDirectory) clearDirectory(it)
-            it.delete()
-        }
-    }
-
-    private inline fun <reified T>serializeXml(file: File, xmlObj: T) =
-        with(JAXBContext.newInstance(T::class.java).createMarshaller()){
-            setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE)
-            marshal(xmlObj, file)
-        }
-
-    private inline fun <reified T>deserializeXml(file: File): T =
-        JAXBContext.newInstance(T::class.java)
-            .createUnmarshaller()
-            .unmarshal(file) as T
-
 
     inner class Module(node: DependencyNode, depth: Int = 0){
         private val logIndent = "|   ".repeat(depth)
@@ -127,7 +110,7 @@ class DependenciesInstaller : AbstractMojo() {
                 with(File(it)) {
                     if (!exists()) mkdirs()
                     else if(writeMode == WriteMode.UPDATE)
-                        clearDirectory(this)else {}
+                        clearDirectory()else {}
                 }
                 // Copying artifact file from local Maven repository to module home
                 Files.copy(
@@ -146,25 +129,85 @@ class DependenciesInstaller : AbstractMojo() {
             }.toSet()
 
         init{
-            // Creating module.xml
-            val moduleXmlFile = File(home + "module.xml")
-            val oldModuleXml =
-                if (moduleXmlFile.exists() && writeMode == WriteMode.MERGE)
-                    deserializeXml<ModuleXml>(moduleXmlFile)
-                else null
+            // Resolving module.xml
+            val moduleFile = File(home + "module.xml")
+            val moduleRoot =
+                if (moduleFile.exists() && writeMode == WriteMode.MERGE)
+                    moduleFile.parseDocument()
+                else createEmptyDocument(
+                    "module",
+                    xmlns = "urn:jboss:module",
+                    name  = "global.org.postgresql.jdbc"
+                ).firstChild
 
-            serializeXml(moduleXmlFile,
-                ModuleXml(
-                    name = name,
-                    resources = File(home).listFiles { file -> file.isFile && file.name.endsWith(".jar") }
-                        ?.map { ResourceXml(path = it.name) }?.toSet()
-                        ?.plus(oldModuleXml?.resources ?: emptySet())
-                        ?: emptySet(),
-                    dependencies = dependencies.map { ModuleXml(name = it.name) }.toSet()
-                        .plus(oldModuleXml?.dependencies ?: emptySet())
-                )
-            )
+            with(moduleRoot.getOrCreateChild("resources")){
+                File(home).listFiles()?.forEach { file ->
+                    if (file.isFile && file.name.endsWith(".jar"))
+                        getOrCreateChild("resource-root", path = file.name)
+                }
+            }
+
+            if(dependencies.isNotEmpty())
+                with(moduleRoot.getOrCreateChild("dependencies")){
+                    dependencies.forEach {
+                        getOrCreateChild("module", name = it.name)
+                    }
+                }
+
             log("------------------------------------------------------------------------")
         }
     }
+
+    private fun createEmptyDocument(tagName: String, xmlns: String? = null, name: String? = null): Document =
+        DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument()
+            .also { it.createChild(tagName, xmlns, name) }
+
+    private fun File.parseDocument(): Document =
+        DocumentBuilderFactory
+            .newInstance()
+            .newDocumentBuilder()
+            .parse(this)
+
+    private fun File.saveDocument(doc: Document) = with(TransformerFactory.newInstance().newTransformer()) {
+        setOutputProperty(OutputKeys.INDENT, "yes")
+        setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4")
+        transform(DOMSource(doc), StreamResult(this@saveDocument))
+    }
+
+    private fun File.clearDirectory() {
+        listFiles()?.forEach {
+            if (it.isDirectory) it.clearDirectory()
+            it.delete()
+        }
+    }
+
+    private fun Node.getChild(tagName: String, xmlns: String? = null, name: String? = null, path: String? = null): Node? {
+        val childNodes = this.childNodes
+        for (i in 0 until childNodes.length) {
+            with(childNodes.item(i)){
+                if (nodeName == name
+                    && (xmlns == null || attributes.getNamedItem("xmlns")?.nodeValue?.substringBeforeLast(":") == xmlns)
+                    && (name == null  || attributes.getNamedItem("name")?.nodeValue == name)
+                    && (path == null  || attributes.getNamedItem("path")?.nodeValue == path)
+                ) return this
+            }
+        }
+        return null
+    }
+
+    private fun Node.createChild(tagName: String, xmlns: String? = null, name: String? = null, path: String? = null): Node{
+        // Removing last empty nodes
+        while (lastChild != null && lastChild.nodeType == Node.TEXT_NODE && lastChild.nodeValue.trim().isEmpty())
+            removeChild(lastChild)
+
+        return ownerDocument.createElement(tagName).also {
+            if(xmlns != null) it.setAttribute("xmlns","${xmlns}:1.0")
+            if(name  != null) it.setAttribute("name", name)
+            if(path  != null) it.setAttribute("name", path)
+            appendChild(it)
+        }
+    }
+
+    private fun Node.getOrCreateChild(tagName: String, xmlns: String? = null, name: String? = null, path: String? = null) =
+        getChild(tagName, xmlns, name, path) ?: createChild(tagName, xmlns, name, path)
 }

@@ -1,11 +1,9 @@
 import org.w3c.dom.Document
 import org.w3c.dom.Node
 import java.io.File
-import java.util.stream.IntStream
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMResult
 import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 import kotlin.test.Test
@@ -13,72 +11,61 @@ import kotlin.test.Test
 
 class Test {
 
-    private val file = File("standalone.xml")
-    private val document = file.parseXml()
+    private val file = File("test.xml")
+    private val document = createEmptyDocument("server")
 
     @Test
     fun test() {
-        val rootElement = document.getElementsByTagName("root").item(0)
 
-        rootElement.removeEmptyTextNodes()
+        val globalModulesNode = document
+            .firstChild!!
+            .getOrCreateChild("profile")
+            .getOrCreateChild("subsystem", "urn:jboss:domain:ee")
+            .getOrCreateChild("global-modules")
 
-        val person1 = document.createElement("person")
-        person1.setAttribute("name", "John")
-        rootElement.appendChild(person1)
-
-        val person2 = document.createElement("person")
-        person2.setAttribute("name", "Jane")
-        rootElement.appendChild(person2)
-
-
-//        val subsystemNode = document
-//            .getChild("server", "urn:jboss:domain")
-//            ?.getChild("profile")
-//            ?.getChild("subsystem", "urn:jboss:domain:ee")
-
-//        subsystemNode?.getOrCreateChild("test0", "test")
-//
-//        subsystemNode?.getOrCreateChild("test1", "test")
-//        subsystemNode?.getOrCreateChild("test2", "test")
-//        subsystemNode?.getOrCreateChild("test3", "test")
-//        subsystemNode?.getOrCreateChild("test4", "test")
-//        val modulesNode: Node
+        globalModulesNode.getOrCreateChild("module", name = "dcdcdcd")
+        globalModulesNode.getOrCreateChild("module", name = "tttttt")
+        globalModulesNode.getOrCreateChild("module", name = "dc")
+        globalModulesNode.getOrCreateChild("module", name = "gthhhh")
+        globalModulesNode.getOrCreateChild("module", name = "3rrrr43r4r4r")
 
         file.saveXml(document)
-
     }
+    private fun createEmptyDocument(rootName: String): Document =
+        DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument()
+            .also { it.appendChild(it.createElement(rootName)) }
 
-    private fun Node.getOrCreateChild(name: String, xmlns: String? = null): Node {
-        var child = getChild(name, xmlns)
+    private fun Node.getOrCreateChild(tagName: String,
+                                      xmlns: String? = null,
+                                      name: String? = null): Node {
+        var child = getChild(tagName, xmlns, name)
         return if (child != null) child
         else {
-            child = ownerDocument.createElement(name)
+            // Removing last empty nodes
+            while (lastChild != null && lastChild.nodeType == Node.TEXT_NODE && lastChild.nodeValue.trim().isEmpty())
+                removeChild(lastChild)
+
+            child = ownerDocument.createElement(tagName)
             if(xmlns != null) child.setAttribute("xmlns","$xmlns:1.0")
+            if(name != null) child.setAttribute("name",name)
             appendChild(child)
             child
         }
     }
 
-    private fun Node.getChild(name: String, xmlns: String? = null): Node? {
+    private fun Node.getChild(tagName: String,
+                              xmlns: String? = null,
+                              name: String? = null): Node? {
         val childNodes = this.childNodes
         for (i in 0 until childNodes.length) {
             with(childNodes.item(i)){
-                if (nodeName == name
-                    && if(xmlns != null)
-                        attributes.getNamedItem("xmlns").nodeValue.substringBeforeLast(":") == xmlns
-                    else true)
-                    return this
+                if (nodeName == tagName
+                    && (xmlns == null || attributes.getNamedItem("xmlns")?.nodeValue?.substringBeforeLast(":") == xmlns)
+                    && (name == null || attributes.getNamedItem("name")?.nodeValue == name)
+                    ) return this
             }
         }
         return null
-    }
-
-    private fun Node.removeEmptyTextNodes() {
-        for (i in childNodes.length - 1 downTo 0) {
-            val node = childNodes.item(i)
-            if (node.nodeType == Node.TEXT_NODE && node.nodeValue.trim().isEmpty())
-                removeChild(node)
-        }
     }
 
     private fun File.parseXml(): Document =
