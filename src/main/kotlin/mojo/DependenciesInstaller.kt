@@ -26,7 +26,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 // Installs dependencies to WildFly
-@Mojo(name = "install-to-wildfly", defaultPhase = LifecyclePhase.INSTALL)
+@Mojo(name = "install-global", defaultPhase = LifecyclePhase.INSTALL)
 class DependenciesInstaller : AbstractMojo() {
 
     @Component
@@ -58,15 +58,15 @@ class DependenciesInstaller : AbstractMojo() {
         MERGE
     }
 
-    private val groupHome: String
-        get() = "$wildflyHome\\modules\\$group\\"
+    private val modulesHome: String
+        get() = "$wildflyHome\\modules\\"
 
     override fun execute() {
         wildflyHome = wildflyHome.replace('/', '\\')
         try {
             checkIfWildFlyExists()
             if(mode == Mode.REPLACE)
-                File(groupHome).clearDirectory()
+                File(modulesHome + group).clearDirectory()
             installModules()
         }
         catch (ex: Exception){
@@ -76,12 +76,12 @@ class DependenciesInstaller : AbstractMojo() {
     }
 
     private fun checkIfWildFlyExists() = with(File(wildflyHome)) {
-        if(!exists())    throw FileNotFoundException("WildFly doesn't exist: $wildflyHome")
-        if(!isDirectory) throw FileSystemException("WildFly location is not directory: $wildflyHome")
+        if(!exists())    throw FileNotFoundException("WildFly не существует по указанному пути: $wildflyHome")
+        if(!isDirectory) throw FileSystemException("Указанный путь к WildFly должен являться директорией: $wildflyHome")
     }
 
     private fun installModules() {
-        log.info("Resolving modules:")
+        log.info("Получение и установка модулей:")
         Module(
             dependencyGraphBuilder
                 .buildDependencyGraph(
@@ -97,8 +97,8 @@ class DependenciesInstaller : AbstractMojo() {
 
     private fun patchConfig(configName: String, moduleGraphNames: List<String>){
         val configFile = File("$wildflyHome\\standalone\\configuration\\${configName.trim()}.xml")
-        log.info("Patching configuration " + configFile.absolutePath)
-        if(!configFile.exists()) throw FileNotFoundException("Configuration file doesn't exist")
+        log.info("Правка файла конфигурации: " + configFile.absolutePath)
+        if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
 
         with(configFile.parseDocument()
             .firstChild!!
@@ -119,7 +119,7 @@ class DependenciesInstaller : AbstractMojo() {
     inner class Module(node: DependencyNode, depth: Int = 0){
 
         // Returns every module name including itself and dependencies
-        fun getGraphNames(): List<String> = listOf("$group.$name") + dependencies.map { it.getGraphNames() }.flatten()
+        fun getGraphNames(): List<String> = listOf(name) + dependencies.map { it.getGraphNames() }.flatten()
 
         private val logIndent = "|   ".repeat(depth)
         private fun log(message: String) = log.info(logIndent + message)
@@ -130,17 +130,17 @@ class DependenciesInstaller : AbstractMojo() {
             repositorySystem.resolve(ArtifactResolutionRequest().apply { artifact = node.artifact })
         }
 
-        private val name = (JarFile(node.artifact.file)
+        private val name = ("$group." + (JarFile(node.artifact.file)
             .manifest
             ?.mainAttributes
             ?.getValue("Automatic-Module-Name")
-            ?: "${node.artifact.groupId}.${node.artifact.artifactId}").also {
-                log("module name: $it")
+            ?: "${node.artifact.groupId}.${node.artifact.artifactId}")).also {
+                log("Имя  модуля: $it")
             }
 
-        private val home = "$groupHome${name.replace('.', '\\')}\\$slot\\"
+        private val home = "$modulesHome${name.replace('.', '\\')}\\$slot\\"
             .also {
-                log("module home: $it")
+                log("Путь модуля: $it")
                 // Resolving the home
                 with(File(it)) {
                     if (!exists()) mkdirs()
@@ -158,7 +158,7 @@ class DependenciesInstaller : AbstractMojo() {
         private val dependencies = node.children
             .also {
                 if(it.isNotEmpty())
-                    log("dependencies:")
+                    log("Зависимости:")
             }.map {
                 Module(it, depth + 1)
             }.toSet()
