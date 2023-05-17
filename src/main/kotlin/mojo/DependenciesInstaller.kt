@@ -26,7 +26,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 // Installs dependencies to WildFly
-@Mojo(name = "install-global", defaultPhase = LifecyclePhase.INSTALL)
+@Mojo(name = "install-to-wildfly", defaultPhase = LifecyclePhase.INSTALL)
 class DependenciesInstaller : AbstractMojo() {
 
     @Component
@@ -40,6 +40,7 @@ class DependenciesInstaller : AbstractMojo() {
 
     @Parameter(required = true)
     private lateinit var wildflyHome: String
+    private lateinit var modulesHome: String
 
     @Parameter(defaultValue = "global", required = true)
     private lateinit var group: String
@@ -58,11 +59,11 @@ class DependenciesInstaller : AbstractMojo() {
         MERGE
     }
 
-    private val modulesHome: String
-        get() = "$wildflyHome\\modules\\"
+
 
     override fun execute() {
-        wildflyHome = wildflyHome.replace('/', '\\')
+        wildflyHome = wildflyHome.replace('\\', '/').removeSuffix("/")
+        modulesHome = "$wildflyHome/modules"
         try {
             checkIfWildFlyExists()
             if(mode == Mode.REPLACE)
@@ -96,7 +97,7 @@ class DependenciesInstaller : AbstractMojo() {
     }
 
     private fun patchConfig(configName: String, moduleGraphNames: List<String>){
-        val configFile = File("$wildflyHome\\standalone\\configuration\\${configName.trim()}.xml")
+        val configFile = File("$wildflyHome/standalone/configuration/${configName.trim()}.xml")
         log.info("Правка файла конфигурации: " + configFile.absolutePath)
         if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
 
@@ -138,7 +139,7 @@ class DependenciesInstaller : AbstractMojo() {
                 log("Имя  модуля: $it")
             }
 
-        private val home = "$modulesHome${name.replace('.', '\\')}\\$slot\\"
+        private val home = "$modulesHome${name.replace('.', '/')}/$slot/"
             .also {
                 log("Путь модуля: $it")
                 // Resolving the home
