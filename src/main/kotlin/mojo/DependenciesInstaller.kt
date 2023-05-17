@@ -9,6 +9,7 @@ import org.apache.maven.plugins.annotations.Mojo
 import org.apache.maven.plugins.annotations.Parameter
 import org.apache.maven.project.DefaultProjectBuildingRequest
 import org.apache.maven.repository.RepositorySystem
+import org.apache.maven.shared.dependency.graph.DependencyCollectorBuilder
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder
 import org.apache.maven.shared.dependency.graph.DependencyNode
 import org.w3c.dom.Document
@@ -30,7 +31,7 @@ import javax.xml.transform.stream.StreamResult
 class DependenciesInstaller : AbstractMojo() {
 
     @Component
-    private lateinit var dependencyGraphBuilder: DependencyGraphBuilder
+    private lateinit var dependencyGraphBuilder: DependencyCollectorBuilder
 
     @Component
     private lateinit var repositorySystem: RepositorySystem
@@ -45,9 +46,6 @@ class DependenciesInstaller : AbstractMojo() {
     @Parameter(defaultValue = "global", required = true)
     private lateinit var group: String
 
-    @Parameter(defaultValue = "main", required = true)
-    private lateinit var slot: String
-
     @Parameter(defaultValue = "standalone", required = true)
     private lateinit var targetXmlConfigs: Array<String>
 
@@ -58,7 +56,6 @@ class DependenciesInstaller : AbstractMojo() {
         UPDATE,
         MERGE
     }
-
 
 
     override fun execute() {
@@ -81,11 +78,20 @@ class DependenciesInstaller : AbstractMojo() {
         if(!isDirectory) throw FileSystemException("Указанный путь к WildFly должен являться директорией: $wildflyHome")
     }
 
+    private fun installDependencies(){
+        val graph = dependencyGraphBuilder
+            .collectDependencyGraph(
+                DefaultProjectBuildingRequest(session.projectBuildingRequest)
+                    .apply { project = session.currentProject }, null)
+
+
+    }
+
     private fun installModules() {
         log.info("Получение и установка модулей:")
         Module(
             dependencyGraphBuilder
-                .buildDependencyGraph(
+                .collectDependencyGraph(
                     DefaultProjectBuildingRequest(session.projectBuildingRequest)
                         .apply { project = session.currentProject }, null
                 )
@@ -108,7 +114,7 @@ class DependenciesInstaller : AbstractMojo() {
             .getOrCreateChild("global-modules"))
         {
             if(mode == Mode.REPLACE) while (firstChild != null) removeChild(lastChild)
-            moduleGraphNames.forEach { getOrCreateChild("module", name = it, slot = slot) }
+            moduleGraphNames.forEach { getOrCreateChild("module", name = it) }
             configFile.saveDocument(this.ownerDocument)
         }
     }
@@ -135,11 +141,11 @@ class DependenciesInstaller : AbstractMojo() {
             .manifest
             ?.mainAttributes
             ?.getValue("Automatic-Module-Name")
-            ?: "${node.artifact.groupId}.${node.artifact.artifactId}")).also {
+            ?: "${node.artifact.groupId}.${node.artifact.artifactId}") +"."+ node.artifact.version.replace('.', '-')).also {
                 log("Имя  модуля: $it")
             }
 
-        private val home = "$modulesHome${name.replace('.', '/')}/$slot/"
+        private val home = "$modulesHome/${name.replace('.', '/')}/main/"
             .also {
                 log("Путь модуля: $it")
                 // Resolving the home
@@ -165,7 +171,7 @@ class DependenciesInstaller : AbstractMojo() {
             }.toSet()
 
         init{
-            // Fetching module.xml
+            // Preparing module.xml
             val moduleFile = File(home + "module.xml")
             val moduleDocument =
                 if (moduleFile.exists() && mode == Mode.MERGE)
@@ -222,7 +228,7 @@ class DependenciesInstaller : AbstractMojo() {
         }
     }
 
-    private fun Node.getChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null): Node? {
+    private fun Node.getChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null): Node? {
         val childNodes = this.childNodes
         for (i in 0 until childNodes.length) {
             with(childNodes.item(i)){
@@ -230,14 +236,13 @@ class DependenciesInstaller : AbstractMojo() {
                     && (xmlns == null || attributes.getNamedItem("xmlns")?.nodeValue?.substringBeforeLast(":") == xmlns)
                     && (name == null  || attributes.getNamedItem("name")?.nodeValue == name)
                     && (path == null  || attributes.getNamedItem("path")?.nodeValue == path)
-                    && (slot == null  || attributes.getNamedItem("slot")?.nodeValue == slot)
                 ) return this
             }
         }
         return null
     }
 
-    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null): Node{
+    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null): Node{
         // Removing last empty nodes
         while (lastChild != null && lastChild.nodeType == Node.TEXT_NODE && lastChild.nodeValue?.trim()?.isEmpty() == true)
             removeChild(lastChild)
@@ -246,12 +251,10 @@ class DependenciesInstaller : AbstractMojo() {
             if(xmlns != null) it.setAttribute("xmlns","${xmlns}:1.0")
             if(name  != null) it.setAttribute("name", name)
             if(path  != null) it.setAttribute("path", path)
-            if(slot  != null) it.setAttribute("slot", slot)
             appendChild(it)
         }
     }
 
-    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null) =
-        getChild(nodeName, xmlns, name, path, slot)
-            ?: createChild(nodeName, xmlns, name, path, slot)
+    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null) =
+        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, path)
 }
