@@ -57,14 +57,13 @@ class DependenciesInstaller : AbstractMojo() {
         MERGE
     }
 
-
     override fun execute() {
         wildflyHome = wildflyHome.replace('\\', '/').removeSuffix("/")
         modulesHome = "$wildflyHome/modules"
         try {
             checkIfWildFlyExists()
             if(mode == Mode.REPLACE)
-                File(modulesHome + group).clearDirectory()
+                File("$modulesHome/$group").clearDirectory()
             installModules()
         }
         catch (ex: Exception){
@@ -83,8 +82,6 @@ class DependenciesInstaller : AbstractMojo() {
             .collectDependencyGraph(
                 DefaultProjectBuildingRequest(session.projectBuildingRequest)
                     .apply { project = session.currentProject }, null)
-
-
     }
 
     private fun installModules() {
@@ -242,7 +239,7 @@ class DependenciesInstaller : AbstractMojo() {
         return null
     }
 
-    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null): Node{
+    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null): Node{
         // Removing last empty nodes
         while (lastChild != null && lastChild.nodeType == Node.TEXT_NODE && lastChild.nodeValue?.trim()?.isEmpty() == true)
             removeChild(lastChild)
@@ -255,6 +252,6 @@ class DependenciesInstaller : AbstractMojo() {
         }
     }
 
-    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null) =
-        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, path)
+    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null) =
+        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, path, slot)
 }
