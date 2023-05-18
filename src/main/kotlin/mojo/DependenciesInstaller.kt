@@ -93,9 +93,9 @@ class DependenciesInstaller : AbstractMojo() {
                         .apply { project = session.currentProject }, null
                 )
         ).also {
-            with(it.getGraphNames()) {
-                targetXmlConfigs.forEach { configName -> patchConfig(configName, this) }
-            }
+//            with(it.getGraphNames()) {
+//                targetXmlConfigs.forEach { configName -> patchConfig(configName, this) }
+//            }
         }
     }
 
