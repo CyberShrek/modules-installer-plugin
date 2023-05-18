@@ -77,13 +77,6 @@ class DependenciesInstaller : AbstractMojo() {
         if(!isDirectory) throw FileSystemException("Указанный путь к WildFly должен являться директорией: $wildflyHome")
     }
 
-    private fun installDependencies(){
-        val graph = dependencyGraphBuilder
-            .collectDependencyGraph(
-                DefaultProjectBuildingRequest(session.projectBuildingRequest)
-                    .apply { project = session.currentProject }, null)
-    }
-
     private fun installModules() {
         log.info("Получение и установка модулей:")
         Module(
@@ -191,7 +184,7 @@ class DependenciesInstaller : AbstractMojo() {
             if(dependencies.isNotEmpty())
                 with(moduleDocument.firstChild.getOrCreateChild("dependencies")){
                     dependencies.forEach {
-                        getOrCreateChild("module", name = it.name)
+                        getOrCreateChild("module", name = it.name, export = true)
                     }
                 }
 
@@ -239,7 +232,7 @@ class DependenciesInstaller : AbstractMojo() {
         return null
     }
 
-    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null): Node{
+    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, export: Boolean? = null): Node{
         // Removing last empty nodes
         while (lastChild != null && lastChild.nodeType == Node.TEXT_NODE && lastChild.nodeValue?.trim()?.isEmpty() == true)
             removeChild(lastChild)
@@ -248,10 +241,11 @@ class DependenciesInstaller : AbstractMojo() {
             if(xmlns != null) it.setAttribute("xmlns","${xmlns}:1.0")
             if(name  != null) it.setAttribute("name", name)
             if(path  != null) it.setAttribute("path", path)
+            if(export  != null) it.setAttribute("export", export.toString())
             appendChild(it)
         }
     }
 
-    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, slot: String? = null) =
-        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, path, slot)
+    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, export: Boolean? = null) =
+        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, path, export)
 }
