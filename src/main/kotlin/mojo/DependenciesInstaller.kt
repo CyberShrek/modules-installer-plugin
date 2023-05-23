@@ -10,7 +10,6 @@ import org.apache.maven.plugins.annotations.Parameter
 import org.apache.maven.project.DefaultProjectBuildingRequest
 import org.apache.maven.repository.RepositorySystem
 import org.apache.maven.shared.dependency.graph.DependencyCollectorBuilder
-import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder
 import org.apache.maven.shared.dependency.graph.DependencyNode
 import org.w3c.dom.Document
 import org.w3c.dom.Node
@@ -85,38 +84,31 @@ class DependenciesInstaller : AbstractMojo() {
                     DefaultProjectBuildingRequest(session.projectBuildingRequest)
                         .apply { project = session.currentProject }, null
                 )
-        ).also {
-//            with(it.getGraphNames()) {
-//                targetXmlConfigs.forEach { configName -> patchConfig(configName, this) }
-//            }
-        }
+        )
     }
 
-    private fun patchConfig(configName: String, moduleGraphNames: List<String>){
-        val configFile = File("$wildflyHome/standalone/configuration/${configName.trim()}.xml")
-        log.info("Правка файла конфигурации: " + configFile.absolutePath)
-        if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
-
-        with(configFile.parseDocument()
-            .firstChild!!
-            .getOrCreateChild("profile")
-            .getOrCreateChild("subsystem", "urn:jboss:domain:ee")
-            .getOrCreateChild("global-modules"))
-        {
-            if(mode == Mode.REPLACE) while (firstChild != null) removeChild(lastChild)
-            moduleGraphNames.forEach { getOrCreateChild("module", name = it) }
-            configFile.saveDocument(this.ownerDocument)
-        }
-    }
+//    private fun patchConfig(configName: String, moduleGraphNames: List<String>){
+//        val configFile = File("$wildflyHome/standalone/configuration/${configName.trim()}.xml")
+//        log.info("Правка файла конфигурации: " + configFile.absolutePath)
+//        if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
+//
+//        with(configFile.parseDocument()
+//            .firstChild!!
+//            .getOrCreateChild("profile")
+//            .getOrCreateChild("subsystem", "urn:jboss:domain:ee")
+//            .getOrCreateChild("global-modules"))
+//        {
+//            if(mode == Mode.REPLACE) while (firstChild != null) removeChild(lastChild)
+//            moduleGraphNames.forEach { getOrCreateChild("module", name = it) }
+//            configFile.saveDocument(this.ownerDocument)
+//        }
+//    }
 
     // Inner class Module takes in a DependencyNode and an optional depth parameter, logs artifact and fetches it via Maven.
     // It initializes name and home properties, resolves home directory, copies artifact file, and adds dependencies as child nodes.
     // It also creates module.xml file, adds resources and dependencies to it, and saves the updated document.
     // All properties are logged. A separator line is added at the end.
     inner class Module(node: DependencyNode, depth: Int = 0){
-
-        // Returns every module name including itself and dependencies
-        fun getGraphNames(): List<String> = listOf(name) + dependencies.map { it.getGraphNames() }.flatten()
 
         private val logIndent = "|   ".repeat(depth)
         private fun log(message: String) = log.info(logIndent + message)
@@ -131,7 +123,8 @@ class DependenciesInstaller : AbstractMojo() {
             .manifest
             ?.mainAttributes
             ?.getValue("Automatic-Module-Name")
-            ?: "${node.artifact.groupId}.${node.artifact.artifactId}") +"."+ node.artifact.version.replace('.', '-')).also {
+            ?: "${node.artifact.groupId}.${node.artifact.artifactId}") +"."+ node.artifact.version.replace('.', '-'))
+            .also {
                 log("Имя  модуля: $it")
             }
 
@@ -152,45 +145,44 @@ class DependenciesInstaller : AbstractMojo() {
                 )
             }
 
-        private val dependencies = node.children
-            .also {
-                if(it.isNotEmpty())
-                    log("Зависимости:")
-            }.map {
-                Module(it, depth + 1)
-            }.toSet()
+        private val resources = File(home).listFiles{ file -> file.isFile && file.name.endsWith(".jar")}
+
+        private val dependencies =
+        if(node.children.isNotEmpty()) {
+            log("Зависимости: ")
+            node.children.map { node -> Module(node, depth + 1) }
+        }
+        else null
 
         init{
-            // Preparing module.xml
-            val moduleFile = File(home + "module.xml")
-            val moduleDocument =
-                if (moduleFile.exists() && mode == Mode.MERGE)
-                    moduleFile.parseDocument()
-                else createEmptyDocument(
-                    "module",
-                    xmlns = "urn:jboss:module",
-                    name  = name
-                )
+            val file = File(home + "module.xml")
+
+            val document = if (file.exists())
+                file.parseDocument()
+            else createEmptyDocument(
+                "module",
+                xmlns = "urn:jboss:module",
+                name  = name
+            )
 
             // Adding resources
-            with(moduleDocument.firstChild.getOrCreateChild("resources")){
-                File(home).listFiles()?.forEach { file ->
-                    if (file.isFile && file.name.endsWith(".jar"))
-                        getOrCreateChild("resource-root", path = file.name)
+            with(document.firstChild.getOrCreateChild("resources")) {
+                resources?.forEach {
+                    getOrCreateChild("resource-root", path = it.name)
                 }
             }
 
             // Adding dependencies
-            if(dependencies.isNotEmpty())
-                with(moduleDocument.firstChild.getOrCreateChild("dependencies")){
+            if (dependencies?.isNotEmpty() == true)
+                with(document.firstChild.getOrCreateChild("dependencies")) {
                     dependencies.forEach {
                         getOrCreateChild("module", name = it.name, export = true)
                     }
                 }
 
-            moduleFile.saveDocument(moduleDocument)
+            file.saveDocument(document)
 
-            log("------------------------------------------------------------------------")
+            log("——————————————————————————————————————————————————————————————————————————")
         }
     }
 
