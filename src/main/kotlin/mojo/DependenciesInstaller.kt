@@ -19,6 +19,7 @@ import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.jar.JarFile
+import javax.annotation.Resources
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
@@ -42,14 +43,23 @@ class DependenciesInstaller : AbstractMojo() {
     private lateinit var wildflyHome: String
     private lateinit var modulesHome: String
 
-    @Parameter(defaultValue = "global", required = true)
-    private lateinit var group: String
+    @Parameter(defaultValue = "")
+    private var groupName: String = ""
 
-    @Parameter(defaultValue = "standalone", required = true)
-    private lateinit var targetXmlConfigs: Array<String>
+    @Parameter(defaultValue = "")
+    private var configFiles: Set<String> = emptySet()
+
+    @Parameter(defaultValue = "")
+    private var extraDependencies: Set<String> = emptySet()
+
+    @Parameter(defaultValue = "false")
+    private var resourcesInsteadOfDependencies: Boolean = false
+
+    @Parameter(defaultValue = "false")
+    private var isGlobal: Boolean = false
 
     @Parameter(defaultValue = "MERGE", required = true)
-    private lateinit var mode: Mode
+    private lateinit var installMode: Mode
     private enum class Mode {
         REPLACE,
         UPDATE,
@@ -61,8 +71,8 @@ class DependenciesInstaller : AbstractMojo() {
         modulesHome = "$wildflyHome/modules"
         try {
             checkIfWildFlyExists()
-            if(mode == Mode.REPLACE)
-                File("$modulesHome/$group").clearDirectory()
+            if(installMode == Mode.REPLACE && groupName.isNotBlank())
+                File("$modulesHome/$groupName").clearDirectory()
             installModules()
         }
         catch (ex: Exception){
@@ -84,25 +94,33 @@ class DependenciesInstaller : AbstractMojo() {
                     DefaultProjectBuildingRequest(session.projectBuildingRequest)
                         .apply { project = session.currentProject }, null
                 )
-        )
+        ).apply {
+            configFiles.forEach {
+                patchConfig(it, name)
+            }
+        }
     }
 
-//    private fun patchConfig(configName: String, moduleGraphNames: List<String>){
-//        val configFile = File("$wildflyHome/standalone/configuration/${configName.trim()}.xml")
-//        log.info("Правка файла конфигурации: " + configFile.absolutePath)
-//        if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
-//
-//        with(configFile.parseDocument()
-//            .firstChild!!
-//            .getOrCreateChild("profile")
-//            .getOrCreateChild("subsystem", "urn:jboss:domain:ee")
-//            .getOrCreateChild("global-modules"))
-//        {
-//            if(mode == Mode.REPLACE) while (firstChild != null) removeChild(lastChild)
-//            moduleGraphNames.forEach { getOrCreateChild("module", name = it) }
-//            configFile.saveDocument(this.ownerDocument)
-//        }
-//    }
+    private fun patchConfig(configName: String, moduleName: String){
+        val configFile = File("$wildflyHome/standalone/configuration/${configName.trim()}")
+        log.info("Правка файла конфигурации: " + configFile.absolutePath)
+        if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
+
+        with(configFile.parseDocument()) {
+            firstChild!!
+                .getOrCreateChild("profile")
+                .getOrCreateChild("subsystem", "urn:jboss:domain:ee")
+                .getOrCreateChild("global-modules")
+                .apply {
+                    getOrCreateChild("module", name = moduleName)
+                        .also {
+                            if(!isGlobal)
+                                removeChild(it)
+                        }
+                }
+            configFile.saveDocument(this)
+        }
+    }
 
     // Inner class Module takes in a DependencyNode and an optional depth parameter, logs artifact and fetches it via Maven.
     // It initializes name and home properties, resolves home directory, copies artifact file, and adds dependencies as child nodes.
@@ -119,7 +137,7 @@ class DependenciesInstaller : AbstractMojo() {
             repositorySystem.resolve(ArtifactResolutionRequest().apply { artifact = node.artifact })
         }
 
-        private val name = ("$group." + (JarFile(node.artifact.file)
+        val name = ((if (groupName.isNotBlank()) "$groupName." else "") + (JarFile(node.artifact.file)
             .manifest
             ?.mainAttributes
             ?.getValue("Automatic-Module-Name")
@@ -134,7 +152,7 @@ class DependenciesInstaller : AbstractMojo() {
                 // Resolving the home
                 with(File(it)) {
                     if (!exists()) mkdirs()
-                    else if(mode == Mode.UPDATE)
+                    else if(installMode == Mode.UPDATE || installMode == Mode.REPLACE)
                         clearDirectory()else {}
                 }
                 // Copying artifact file from local Maven repository to module home
@@ -166,24 +184,46 @@ class DependenciesInstaller : AbstractMojo() {
             )
 
             // Adding resources
-            with(document.firstChild.getOrCreateChild("resources")) {
-                resources?.forEach {
-                    getOrCreateChild("resource-root", path = it.name)
-                }
-            }
+            if(resources != null)
+                document.fillResources(resources.map { it.name })
 
             // Adding dependencies
-            if (dependencies?.isNotEmpty() == true)
-                with(document.firstChild.getOrCreateChild("dependencies")) {
-                    dependencies.forEach {
-                        getOrCreateChild("module", name = it.name, export = true)
-                    }
-                }
+            if (dependencies?.isNotEmpty() == true) {
+                // Installs resources Instead Of Dependencies only in the root module
+                if (resourcesInsteadOfDependencies && depth == 0)
+                    document.fillResources(getAllResourcePaths())
+                else
+                    document.fillDependencies(dependencies.map { it.name })
+            }
+
+            // Adding extra dependencies
+            if(extraDependencies.isNotEmpty() && depth == 0)
+                document.fillDependencies(extraDependencies)
 
             file.saveDocument(document)
 
             log("——————————————————————————————————————————————————————————————————————————")
         }
+
+        // Returns all resources including dependency resources
+        private fun getAllResourcePaths(): Set<String> = (
+                (resources?.map { it.absolutePath } ?: emptyList())
+                        + (dependencies?.map { it.getAllResourcePaths() }?.flatten() ?: emptyList())
+                ).toSet()
+
+        private fun Document.fillResources(resourcePaths: Iterable<String>) =
+            with(firstChild.getOrCreateChild("resources")){
+                resourcePaths.forEach {
+                    getOrCreateChild("resource-root", path = it)
+                }
+            }
+
+        private fun Document.fillDependencies(dependencies: Iterable<String>) =
+            with(firstChild.getOrCreateChild("dependencies")){
+                dependencies.forEach {
+                    getOrCreateChild("module", name = it.trim(), export = true)
+                }
+            }
     }
 
     private fun createEmptyDocument(tagName: String, xmlns: String? = null, name: String? = null): Document =
