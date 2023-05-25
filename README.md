@@ -6,7 +6,7 @@
 - облегчить процесс внедрения новых библиотек
 - оптимизировать построение модулей и их зависимостей
 ---
-# Быстрый гайд
+# Guide
 ### 1. Определяем модули в pom.xml
 Для начала нам нужен Maven проект, в котором мы планируем описать модули. Это может быть как уже существующий, так и новый проект; главное, чтобы в нём был файл pom.xml. Сам проект будет выступать в роли корневого модуля. 
 
@@ -74,4 +74,26 @@ xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xs
 ```
 
 ### 2. Добавляем modules-installer-plugin
-Для начала следует его установить локально. Для этого скачиваем саму jar-библиотеку 
+Для начала следует его установить локально. 
+Для этого скачиваем [плагин](https://github.com/CyberShrek/modules-installer-plugin/raw/master/target/modules-installer-plugin-alfa.jar)
+и выполняем команду `mvn org.apache.maven.plugins:maven-install-plugin:3.1.1:install-file -Dfile=сюда нужно подставить путь к скачанному джарнику`.
+Пока такой способ, надеюсь что временный.
+
+После этого мы сможем использовать плагин в нашем pom.xml -> project -> build -> plugins:
+```xml
+<plugin>
+    <artifactId>modules-installer-plugin</artifactId>
+    <groupId>org.vniizht</groupId>
+    <version>alfa</version>
+    <executions>
+        <execution>
+            <goals><goal>install-to-wildfly</goal></goals>
+        </execution>
+    </executions>
+    <configuration>
+        <!-- Про конфигурирование будет в следующем пункте -->
+    </configuration>
+</plugin>
+```
+
+
