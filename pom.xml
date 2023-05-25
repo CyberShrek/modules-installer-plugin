@@ -6,7 +6,7 @@
 
     <artifactId>modules-installer-plugin</artifactId>
     <groupId>org.vniizht</groupId>
-    <version>1.0</version>
+    <version>alfa</version>
 
     <name>maven-modules-installer-plugin</name>
 
