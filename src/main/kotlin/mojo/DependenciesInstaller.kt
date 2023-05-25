@@ -19,7 +19,6 @@ import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.jar.JarFile
-import javax.annotation.Resources
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
@@ -44,7 +43,7 @@ class DependenciesInstaller : AbstractMojo() {
     private lateinit var modulesHome: String
 
     @Parameter(defaultValue = "")
-    private var groupName: String = ""
+    private var groupPrefix: String = ""
 
     @Parameter(defaultValue = "")
     private var configFiles: Set<String> = emptySet()
@@ -71,8 +70,8 @@ class DependenciesInstaller : AbstractMojo() {
         modulesHome = "$wildflyHome/modules"
         try {
             checkIfWildFlyExists()
-            if(installMode == Mode.REPLACE && groupName.isNotBlank())
-                File("$modulesHome/$groupName").clearDirectory()
+            if(installMode == Mode.REPLACE && groupPrefix.isNotBlank())
+                File("$modulesHome/$groupPrefix").clearDirectory()
             installModules()
         }
         catch (ex: Exception){
@@ -96,12 +95,12 @@ class DependenciesInstaller : AbstractMojo() {
                 )
         ).apply {
             configFiles.forEach {
-                patchConfig(it, name)
+                patchConfig(it, this)
             }
         }
     }
 
-    private fun patchConfig(configName: String, moduleName: String){
+    private fun patchConfig(configName: String, module: Module){
         val configFile = File("$wildflyHome/standalone/configuration/${configName.trim()}")
         log.info("Правка файла конфигурации: " + configFile.absolutePath)
         if(!configFile.exists()) throw FileNotFoundException("Файл конфигурации не существует по указанному пути")
@@ -112,7 +111,7 @@ class DependenciesInstaller : AbstractMojo() {
                 .getOrCreateChild("subsystem", "urn:jboss:domain:ee")
                 .getOrCreateChild("global-modules")
                 .apply {
-                    getOrCreateChild("module", name = moduleName)
+                    getOrCreateChild("module", name = module.name, slot = module.slot)
                         .also {
                             if(!isGlobal)
                                 removeChild(it)
@@ -132,23 +131,29 @@ class DependenciesInstaller : AbstractMojo() {
         private fun log(message: String) = log.info(logIndent + message)
 
         init {
-            log(node.artifact.toString())
+            log("Артифакт\t: " + node.artifact)
             // Fetching the node artifact via Maven repository system
             repositorySystem.resolve(ArtifactResolutionRequest().apply { artifact = node.artifact })
         }
 
-        val name = ((if (groupName.isNotBlank()) "$groupName." else "") + (JarFile(node.artifact.file)
+        val name = ((if (groupPrefix.isNotBlank()) "$groupPrefix." else "") + (JarFile(node.artifact.file)
             .manifest
             ?.mainAttributes
             ?.getValue("Automatic-Module-Name")
-            ?: "${node.artifact.groupId}.${node.artifact.artifactId}") +"."+ node.artifact.version.replace('.', '-'))
+            ?: "${node.artifact.groupId}.${node.artifact.artifactId}"))
             .also {
-                log("Имя  модуля: $it")
+                log("Имя\t\t: $it")
             }
 
-        private val home = "$modulesHome/${name.replace('.', '/')}/main/"
+        // Slot is a version
+        val slot = node.artifact.version
             .also {
-                log("Путь модуля: $it")
+            log("Слот\t\t: $it")
+        }
+
+        private val home = "$modulesHome/${name.replace('.', '/')}/$slot/"
+            .also {
+                log("Путь\t\t: $it")
                 // Resolving the home
                 with(File(it)) {
                     if (!exists()) mkdirs()
@@ -180,7 +185,8 @@ class DependenciesInstaller : AbstractMojo() {
             else createEmptyDocument(
                 "module",
                 xmlns = "urn:jboss:module",
-                name  = name
+                name  = name,
+                slot = slot
             )
 
             // Adding resources
@@ -193,12 +199,16 @@ class DependenciesInstaller : AbstractMojo() {
                 if (resourcesInsteadOfDependencies && depth == 0)
                     document.fillResources(getAllResourcePaths())
                 else
-                    document.fillDependencies(dependencies.map { it.name })
+                    document.fillDependencies(dependencies.map { Pair(it.name, it.slot) })
             }
 
             // Adding extra dependencies
             if(extraDependencies.isNotEmpty() && depth == 0)
-                document.fillDependencies(extraDependencies)
+                document.fillDependencies(extraDependencies.map {
+                    with(it.trim().split(":")) {
+                        Pair(get(0), getOrNull(1))
+                    }
+                })
 
             file.saveDocument(document)
 
@@ -218,18 +228,18 @@ class DependenciesInstaller : AbstractMojo() {
                 }
             }
 
-        private fun Document.fillDependencies(dependencies: Iterable<String>) =
+        private fun Document.fillDependencies(dependencies: Iterable<Pair<String, String?>>) =
             with(firstChild.getOrCreateChild("dependencies")){
                 dependencies.forEach {
-                    getOrCreateChild("module", name = it.trim(), export = true)
+                    getOrCreateChild("module", name = it.first, slot = it.second, export = true)
                 }
             }
     }
 
-    private fun createEmptyDocument(tagName: String, xmlns: String? = null, name: String? = null): Document =
+    private fun createEmptyDocument(tagName: String, xmlns: String? = null, name: String? = null, slot: String? = null): Document =
         DocumentBuilderFactory.newInstance()
             .newDocumentBuilder()
-            .newDocument().also { it.createChild(tagName, xmlns, name) }
+            .newDocument().also { it.createChild(tagName, xmlns, name, slot) }
 
     private fun File.parseDocument(): Document =
         DocumentBuilderFactory
@@ -264,20 +274,21 @@ class DependenciesInstaller : AbstractMojo() {
         return null
     }
 
-    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, export: Boolean? = null): Node{
+    private fun Node.createChild(nodeName: String, xmlns: String? = null, name: String? = null, slot: String? = null, path: String? = null, export: Boolean? = null): Node{
         // Removing last empty nodes
         while (lastChild != null && lastChild.nodeType == Node.TEXT_NODE && lastChild.nodeValue?.trim()?.isEmpty() == true)
             removeChild(lastChild)
 
         return (if(this is Document) this else ownerDocument).createElement(nodeName).also {
-            if(xmlns != null) it.setAttribute("xmlns","${xmlns}:1.0")
-            if(name  != null) it.setAttribute("name", name)
-            if(path  != null) it.setAttribute("path", path)
+            if(!xmlns.isNullOrBlank()) it.setAttribute("xmlns","${xmlns}:1.0")
+            if(!name.isNullOrBlank()) it.setAttribute("name", name)
+            if(!slot.isNullOrBlank()) it.setAttribute("slot", slot)
+            if(!path.isNullOrBlank()) it.setAttribute("path", path)
             if(export  != null) it.setAttribute("export", export.toString())
             appendChild(it)
         }
     }
 
-    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, path: String? = null, export: Boolean? = null) =
-        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, path, export)
+    private fun Node.getOrCreateChild(nodeName: String, xmlns: String? = null, name: String? = null, slot: String? = null, path: String? = null, export: Boolean? = null) =
+        getChild(nodeName, xmlns, name, path) ?: createChild(nodeName, xmlns, name, slot, path, export)
 }
