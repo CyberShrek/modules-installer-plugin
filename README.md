@@ -257,7 +257,7 @@ xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xs
 
 </project>
 ```
-Как можно увидеть, Maven конфигурация конечного приложения получилась предельно лаконичной.
+Maven конфигурация конечного приложения получилась предельно лаконичной, потому что его основная логика унаследована от org.vniizht.parent.
 
 DemoController.kt, написанный на внедрённом Kotlin:
 ```kotlin
