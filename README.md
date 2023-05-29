@@ -376,7 +376,7 @@ class DemoController {
 ```
 Останавливаем сервер (иначе конфиг standalone.xml не изменится), запускаем `mvn clean install`, запускаем сервер.
 
-Возвращаемся в родительский pom.xml и заменяем 
+Возвращаемся в пункт 4 и в родительском pom.xml заменяем 
 ```xml
 <dependency>
     <groupId>org.springframework</groupId>
