@@ -94,13 +94,13 @@ xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xs
 ```xml
 <wildflyHome>/home/master/Development/wildfly-20.0.0.Final/</wildflyHome>
 ```
-Плагин преобразует описанные в pom.xml зависимости в дерево модулей и вставит их в папку modules.
+Плагин преобразует описанные в pom.xml зависимости в дерево модулей и вставит их в папку /home/master/Development/wildfly-20.0.0.Final/modules.
 
 Также, для демонстрации, помещу модули в абстрагированную группу, указав параметр groupPrefix:
 ```xml
 <groupPrefix>demo</groupPrefix>
 ```
-Тогда у модулей появится префикс demo, соответственно физически они будут находиться в modules/demo.
+Тогда у модулей появится префикс demo, соответственно физически они будут находиться в /home/master/Development/wildfly-20.0.0.Final/modules/demo.
 
 [Подробно про параметры конфигурации](#configuration). 
 
