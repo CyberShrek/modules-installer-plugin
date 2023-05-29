@@ -95,7 +95,7 @@ xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xs
     </configuration>
 </plugin>
 ```
-Зтем нужно описать в configuration, как и куда мы хотим установить модули. Как минимум нужно указать расположение WildFly в параметре wildflyHome, например:
+Затем нужно описать в configuration, как и куда мы хотим установить модули. Как минимум нужно указать расположение WildFly в параметре wildflyHome, например:
 ```xml
 <wildflyHome>/home/master/Development/wildfly-20.0.0.Final/</wildflyHome>
 ```
