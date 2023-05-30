@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.vniizht</groupId>
+    <artifactId>spring-module</artifactId>
+    <version>demo</version>
+    <name>spring-module</name>
+
+    <properties>
+        <java.version>1.8</java.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+            <version>5.3.27</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>modules-installer-plugin</artifactId>
+                <groupId>org.vniizht</groupId>
+                <version>alfa</version>
+                <executions>
+                    <execution>
+                        <goals><goal>install-to-wildfly</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <wildflyHome>/home/master/Development/wildfly-20.0.0.Final/</wildflyHome>
+                    <resourcesInsteadOfDependencies>true</resourcesInsteadOfDependencies>
+                    <groupPrefix>demo</groupPrefix>
+                    <configFiles>standalone.xml</configFiles>
+                    <isGlobal>true</isGlobal>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

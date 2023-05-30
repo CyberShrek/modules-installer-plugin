@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<server>
+    <profile>
+        <subsystem xmlns="urn:jboss:domain:ee:1.0">
+            <global-modules>
+                <module name="dcdcdcd"/>
+                <module name="tttttt"/>
+                <module name="dc"/>
+                <module name="gthhhh"/>
+                <module name="3rrrr43r4r4r"/>
+            </global-modules>
+        </subsystem>
+    </profile>
+</server>
